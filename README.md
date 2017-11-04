@@ -1,5 +1,5 @@
 # portalData
-Bryan's repo for storing exploration and analysis tools and results used for PORTAL data quality project for the Oregon Department of Transportation and Portland State University. 
+Repository for storing exploration and analysis tools and results used for PORTAL data checking project for the Oregon Department of Transportation. 
 
 Tools are written in R, outputs in various forms such as: images, documents, shiny apps, etc. 
 

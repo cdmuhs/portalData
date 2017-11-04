@@ -1,25 +1,30 @@
 # Initialization ----------------------------------------------------------
 
-#Load neccesary libraries
-require(RPostgreSQL)
+# Load neccesary libraries
+# devtools::install_github("bpb824/portalr")
+require(portalr) # failsrequire(RPostgreSQL)
 require(DBI)
 require(timeSeries)
 require(plyr)
 require(ggplot2)
 require(lubridate)
 require(rjson)
-require(portalr)
 require(scales)
 
-#Set working directory
-setwd("/Users/bblanc/OneDrive/_ODOT/_Portal/investigations/")
+# Set working directory
+setwd("/Users/cdm/Dropbox/Data_Science/portal/investigations/")
 
-#Connect to Portal db, make sure you VPN into PSU CECS network
-db_cred = fromJSON(file="db_credentials.json")
-con <- dbConnect(dbDriver("PostgreSQL"), host=db_cred$db_credentials$db_host, port= 5432, user=db_cred$db_credentials$db_user, password = db_cred$db_credentials$db_pass, dbname=db_cred$db_credentials$db_name)
+# Now VPN into PSU CECS network...
+# Connect to Portal db 
+db_cred = fromJSON(file = "db_credentials.json")
+con <- dbConnect(dbDriver("PostgreSQL"), 
+                 host = db_cred$db_credentials$db_host, port= 5432, 
+                 user = db_cred$db_credentials$db_user, 
+                 password = db_cred$db_credentials$db_pass, 
+                 dbname = db_cred$db_credentials$db_name)
 
-#Read in relational Tables
-stations= dbGetQuery(con,"SELECT * FROM public.stations")
+# Read in relational Tables
+stations = dbGetQuery(con,"SELECT * FROM public.stations")
 highways = dbGetQuery(con,"SELECT * FROM public.highways")
 detectors = dbGetQuery(con,"SELECT * FROM public.detectors")
 corridors  = dbGetQuery(con,"SELECT * FROM public.corridors")
@@ -29,30 +34,34 @@ corridor_stations = dbGetQuery(con,"SELECT * FROM public.corridorstations")
 stas = c(1043,1100)
 subStations = subset(stations,stations$stationid %in% stas)
 dets = detectors$detectorid[detectors$stationid %in% stas]
-startDate = "2015-05-01"
-endDate = "2015-05-31"
+startDate = "2016-01-01"
+endDate = "2017-05-31"
 raw = freewayData(con,dets,startDate,endDate)
 clean = filterFreeway(raw)
-joined = join(clean,detectors,by ="detectorid")
-agg = aggTime(unAgg=joined,aggVars=c("stationid","lanenumber"),timeCut = "hour", acrossDays = TRUE)
+joined = join(clean, detectors, by ="detectorid")
+agg = aggTime(unAgg = joined, 
+              aggVars=c("stationid", "lanenumber"), 
+              timeCut = "hour", 
+              acrossDays = TRUE)
 
-#plotting
+# plotting
 agg$lanenumber = factor(agg$lanenumber)
 png("_results/img/specificIssues/2/clackHwyNB.png", width = 900,height = 400)
 ggplot(agg[agg$stationid==1043,],aes(x=time,y=speed,group =lanenumber, colour = lanenumber))+
-  geom_line()+scale_colour_discrete(name="Lane Number")+
-  ggtitle("I-205 NB @ Clackamas Hwy (Mean over 05-01-15 to 05-31-15)")+
-  ylab("Mean Speed (mph)")+xlab("")+
-  scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_line()+scale_colour_discrete(name="Lane Number")+
+    ggtitle("I-205 NB @ Clackamas Hwy (Mean over 05-01-15 to 05-31-15)")+
+    ylab("Mean Speed (mph)")+xlab("")+
+    scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 dev.off()
 png("_results/img/specificIssues/2/clackHwySB.png", width = 900,height = 400)
 ggplot(agg[agg$stationid==1100,],aes(x=time,y=speed,group =lanenumber, colour = lanenumber))+
-  geom_line()+scale_colour_discrete(name="Lane Number")+
-  ggtitle("I-205 SB @ Clackamas Hwy (Mean over 05-01-15 to 05-31-15)")+ylab("Mean Speed (mph)")+
-  xlab("")+scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_line()+scale_colour_discrete(name="Lane Number")+
+    ggtitle("I-205 SB @ Clackamas Hwy (Mean over 05-01-15 to 05-31-15)")+ylab("Mean Speed (mph)")+
+    xlab("")+scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 dev.off()
+Sys.time()
 
-#Six month analysis
+# Six month analysis
 startDate = "2015-01-01"
 endDate = "2015-06-30"
 raw = freewayData(con,dets,startDate,endDate)
@@ -62,17 +71,17 @@ agg = aggTime(unAgg=joined,aggVars=c("stationid","lanenumber"),timeCut = "hour",
 
 png("2/clackHwyNB-6month.png", width = 900,height = 400)
 ggplot(agg_hour[agg_hour$stationid==1043,])+geom_line(aes(x=hour,y=speed,group =lanenumber, colour = lanenumber))+
-  geom_line(aes(x=hour,y=speed15,group =lanenumber, colour = lanenumber),linetype="dashed",alpha=0.5)+
-  geom_line(aes(x=hour,y=speed85,group =lanenumber, colour = lanenumber),linetype="dashed",alpha=0.5)+
-  scale_colour_discrete(name="Lane Number")+ggtitle("Clackamas Hwy NB (Mean over 01-01-15 to 06-30-15)")+
-  ylab("Mean Speed (mph)")+xlab("")+scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_line(aes(x=hour,y=speed15,group =lanenumber, colour = lanenumber),linetype="dashed",alpha=0.5)+
+    geom_line(aes(x=hour,y=speed85,group =lanenumber, colour = lanenumber),linetype="dashed",alpha=0.5)+
+    scale_colour_discrete(name="Lane Number")+ggtitle("Clackamas Hwy NB (Mean over 01-01-15 to 06-30-15)")+
+    ylab("Mean Speed (mph)")+xlab("")+scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 dev.off()
 png("2/clackHwySB-6month.png", width = 900,height = 400)
 ggplot(agg_hour[agg_hour$stationid==1100,])+geom_line(aes(x=hour,y=speed,group =lanenumber, colour = lanenumber))+
-  geom_line(aes(x=hour,y=speed15,group =lanenumber, colour = lanenumber),linetype="dashed",alpha=0.5)+
-  geom_line(aes(x=hour,y=speed85,group =lanenumber, colour = lanenumber),linetype="dashed",alpha=0.5)+
-  scale_colour_discrete(name="Lane Number")+ggtitle("Clackamas Hwy SB (Mean over 01-01-15 to 06-30-15)")+
-  ylab("Mean Speed (mph)")+xlab("")+scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_line(aes(x=hour,y=speed15,group =lanenumber, colour = lanenumber),linetype="dashed",alpha=0.5)+
+    geom_line(aes(x=hour,y=speed85,group =lanenumber, colour = lanenumber),linetype="dashed",alpha=0.5)+
+    scale_colour_discrete(name="Lane Number")+ggtitle("Clackamas Hwy SB (Mean over 01-01-15 to 06-30-15)")+
+    ylab("Mean Speed (mph)")+xlab("")+scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 dev.off()
 
 #diff12 = agg_hour$speed[agg_hour$lanenumber ==2 & agg_hour$stationid==1043] - agg_hour$speed[agg_hour$lanenumber ==3 & agg_hour$stationid==1043]
@@ -93,10 +102,10 @@ clean = filterFreeway(raw)
 joined = join(clean,detectors,by ="detectorid")
 agg = aggTime(unAgg=joined,aggVars=c("stationid","lanenumber"),timeCut = "hour", acrossDays = TRUE)
 ggplot(agg_hour,aes(x=hour,y=speed,group =lanenumber, colour = lanenumber))+
-  geom_line()+scale_colour_discrete(name="Lane Number")+
-  ggtitle("I-205 SB @ OR-224/82nd (Mean over 05-01-15 to 05-31-15)")+
-  ylab("Mean Speed (mph)")+xlab("")+
-  scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_line()+scale_colour_discrete(name="Lane Number")+
+    ggtitle("I-205 SB @ OR-224/82nd (Mean over 05-01-15 to 05-31-15)")+
+    ylab("Mean Speed (mph)")+xlab("")+
+    scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 
 # Issue 8: I-205 SB @ Stark and Washington - Hourly Ramp Volumes ----------
 stas = c(5051)
@@ -141,7 +150,7 @@ joined = join(clean,detectors,by ="detectorid")
 agg = aggTime(unAgg=joined,aggVars=c("stationid","lanenumber"),timeCut = "hour", acrossDays = TRUE)
 agg$lanenumber=factor(agg$lanenumber)
 ggplot(agg,aes(x=time,y=volume,group=lanenumber,colour=lanenumber))+geom_line()+
-  scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 
 
 # Issue 11: US-26 @ Bethany Rd: Missing Lane 3 data -----------------------
@@ -179,7 +188,7 @@ agg = aggTime(joined,c("stationid","lanenumber"),"hour",acrossDays=TRUE)
 agg$lanenumber[agg$stationid ==5026]= "on-ramp"
 agg$lanenumber = factor(agg$lanenumber)
 ggplot(agg,aes(x=time,y=volume,group=lanenumber,colour=lanenumber))+geom_line()+
-  scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 
 # Issue 17: I-205 NB/SB @ Prescott High Speed/Lane Mismatch ----------------------------------------------------------------
 stations = c(3106,3107)
@@ -195,13 +204,13 @@ agg$lanenumber= factor(agg$lanenumber)
 theme_set(theme_grey(base_size = 25))
 png("17/NB.png",width = 1200,height=500)
 ggplot(agg[agg$stationid==3106,],aes(x=time,y=speed,group = lanenumber, colour = lanenumber))+
-  geom_line()+xlab("")+ylab("Speed (mph)")+ggtitle("Mean hourly Speeds over weekdays in April to July 2015 \n seperated by lane for station 3106 (NB)")+
-  scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_line()+xlab("")+ylab("Speed (mph)")+ggtitle("Mean hourly Speeds over weekdays in April to July 2015 \n seperated by lane for station 3106 (NB)")+
+    scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 dev.off()
 png("17/SB.png",width = 1200,height=500)
 ggplot(agg[agg$stationid==3107,],aes(x=time,y=speed,group = lanenumber, colour = lanenumber))+
-  geom_line()+xlab("")+ylab("Speed (mph)")+ggtitle("Mean hourly Speeds over weekdays in April to July 2015 \n seperated by lane for station 3107 (SB)")+
-  scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_line()+xlab("")+ylab("Speed (mph)")+ggtitle("Mean hourly Speeds over weekdays in April to July 2015 \n seperated by lane for station 3107 (SB)")+
+    scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 dev.off()
 
 
@@ -214,39 +223,39 @@ monthRange = timeSequence("2014-07-01","2015-07-01",by="month")
 monthList = list()
 
 for (i in 1:length(monthRange)){
-  month = substr(as.character(monthRange[i]),1,7)
-  rawRequest = dbGetQuery(con,publicQuery(dets,month))
-  dets = unique(rawRequest$detectorid)
-  detList=list()
-  for (j in 1:length(dets)){
-    subRaw = subset(rawRequest,rawRequest$detectorid %in% dets[j])
-    subRaw$hour = hour((subRaw$starttime))
-    hours = sort(unique(subRaw$hour))
-    hourList = list()
-    for (k in 1:length(hours)){
-      subRawHour = subset(subRaw,subRaw$hour==hours[k])
-      hourList[[as.character(hours[k])]]=goodData(subRawHour)
+    month = substr(as.character(monthRange[i]),1,7)
+    rawRequest = dbGetQuery(con,publicQuery(dets,month))
+    dets = unique(rawRequest$detectorid)
+    detList=list()
+    for (j in 1:length(dets)){
+        subRaw = subset(rawRequest,rawRequest$detectorid %in% dets[j])
+        subRaw$hour = hour((subRaw$starttime))
+        hours = sort(unique(subRaw$hour))
+        hourList = list()
+        for (k in 1:length(hours)){
+            subRawHour = subset(subRaw,subRaw$hour==hours[k])
+            hourList[[as.character(hours[k])]]=goodData(subRawHour)
+        }
+        detList[[as.character(dets[j])]]=hourList
     }
-    detList[[as.character(dets[j])]]=hourList
-  }
-  monthList[[month]]=detList
-  print(paste0("Finished good data filter for month ",i," of ",length(monthRange)))
+    monthList[[month]]=detList
+    print(paste0("Finished good data filter for month ",i," of ",length(monthRange)))
 }
 
 minGood = 0.8
 rowCount = 0
 
 for (k in 1:length(monthList)){
-  detList = monthList[[k]]
-  for (i in 1:length(detList)){
-    det = detList[[i]]
-    for (j in 1:length(det)){
-      good = det[[j]]
-      if(good<minGood){
-        rowCount = rowCount+1
-      }
+    detList = monthList[[k]]
+    for (i in 1:length(detList)){
+        det = detList[[i]]
+        for (j in 1:length(det)){
+            good = det[[j]]
+            if(good<minGood){
+                rowCount = rowCount+1
+            }
+        }
     }
-  }
 }
 
 
@@ -255,25 +264,25 @@ pltFrame = data.frame(matrix(nrow = rowCount,ncol=3))
 colnames(pltFrame)=c("month","hour","lane")
 
 for (k in 1:length(monthList)){
-  detList = monthList[[k]]
-  for (i in 1:length(detList)){
-    det = detList[[i]]
-    for (j in 1:length(det)){
-      good= det[[j]]
-      if(good<minGood){
-        pltFrame$month[ri]=names(monthList[k])
-        pltFrame$hour[ri]=names(det[j])
-        did = names(detList[i])
-        sid = detectors$stationid[detectors$detectorid==did]
-        if(as.numeric(sid)>5000){
-          pltFrame$lane[ri]="on-ramp"
-        }else{
-          pltFrame$lane[ri]=detectors$lanenumber[detectors$detectorid==did]
+    detList = monthList[[k]]
+    for (i in 1:length(detList)){
+        det = detList[[i]]
+        for (j in 1:length(det)){
+            good= det[[j]]
+            if(good<minGood){
+                pltFrame$month[ri]=names(monthList[k])
+                pltFrame$hour[ri]=names(det[j])
+                did = names(detList[i])
+                sid = detectors$stationid[detectors$detectorid==did]
+                if(as.numeric(sid)>5000){
+                    pltFrame$lane[ri]="on-ramp"
+                }else{
+                    pltFrame$lane[ri]=detectors$lanenumber[detectors$detectorid==did]
+                }
+                ri = ri+1
+            }
         }
-        ri = ri+1
-      }
     }
-  }
 }
 
 pltFrame$hour=as.numeric(pltFrame$hour)
@@ -291,7 +300,7 @@ dev.off()
 
 plt = ggplot(pltFrame,aes(x=date,y=lane))+geom_point(color="red",alpha=1/24,size=4)+xlab("Month")+ylab("Lane")+scale_x_date()
 
-###June 2015
+### June 2015
 stas= c(1084,5084)
 subStations = subset(stations,stations$stationid %in% stas)
 dets = detectors$detectorid[detectors$stationid %in% stas ]
@@ -310,7 +319,7 @@ timeLabs = c("3 AM","6 AM","9 AM","12 PM","3 PM","6 PM","9 PM")
 timeTicks = seq(3,21,3)
 ggplot(agg_hour,aes(x=hour,y=speed,group =lanenumber, colour = lanenumber))+geom_line()+scale_colour_discrete(name="Lane Number")+ggtitle("Clackamas Hwy NB (Mean over 05-01-15 to 05-31-15)")+ylab("Mean Speed (mph)")+xlab("")+scale_x_continuous(breaks = timeTicks,labels = timeLabs)
 
-#Caution: this takes a while
+# Caution: this takes a while
 stas= c(1084,5084)
 subStations = subset(stations,stations$stationid %in% stas)
 dets = detectors$detectorid[detectors$stationid %in% stas ]
@@ -318,37 +327,37 @@ subDetectors = subset(detectors,detectors$detectorid %in% dets)
 monthRange = timeSequence("2014-01-01","2015-06-01",by="month")
 monthListUp = list()
 for (i in 1:length(monthRange)){
-  month = substr(as.character(monthRange[i]),1,7)
-  raw = dbGetQuery(con,freewayQuery(dets,"2014-05-01","2014-05-07"))
-  rawRequest =  dbGetQuery(con,publicQuery(dets,month))
-  #incomplete = rawRequest[!complete.cases(rawRequest),]
-  #complete = rawRequest[complete.cases(rawRequest),]
-  dets = unique(rawRequest$detectorid)
-  detList=list()
-  for (j in 1:length(dets)){
-    subRaw = subset(rawRequest,rawRequest$detectorid %in% dets[j])
-    subRaw$hour = hour((subRaw$starttime))
-    hours = sort(unique(subRaw$hour))
-    hourList = list()
-    for (k in 1:length(hours)){
-      subRawHour = subset(subRaw,subRaw$hour==hours[k])
-      flagCount = count(subRawHour$status)
-      flagCount$prop = flagCount$freq/sum(flagCount$freq)
-      flagList = list()
-      for(l in 1:length(statFlags)){
-        flagProp = flagCount$prop[flagCount$x==l-1]
-        if(length(flagProp)==1){
-          flagList[[statFlags[l]]]=flagProp
-        }else{
-          flagList[[statFlags[l]]]=0
+    month = substr(as.character(monthRange[i]),1,7)
+    raw = dbGetQuery(con,freewayQuery(dets,"2014-05-01","2014-05-07"))
+    rawRequest =  dbGetQuery(con,publicQuery(dets,month))
+    #incomplete = rawRequest[!complete.cases(rawRequest),]
+    #complete = rawRequest[complete.cases(rawRequest),]
+    dets = unique(rawRequest$detectorid)
+    detList=list()
+    for (j in 1:length(dets)){
+        subRaw = subset(rawRequest,rawRequest$detectorid %in% dets[j])
+        subRaw$hour = hour((subRaw$starttime))
+        hours = sort(unique(subRaw$hour))
+        hourList = list()
+        for (k in 1:length(hours)){
+            subRawHour = subset(subRaw,subRaw$hour==hours[k])
+            flagCount = count(subRawHour$status)
+            flagCount$prop = flagCount$freq/sum(flagCount$freq)
+            flagList = list()
+            for(l in 1:length(statFlags)){
+                flagProp = flagCount$prop[flagCount$x==l-1]
+                if(length(flagProp)==1){
+                    flagList[[statFlags[l]]]=flagProp
+                }else{
+                    flagList[[statFlags[l]]]=0
+                }
+            }
+            hourList[[as.character(hours[k])]]=flagList
         }
-      }
-      hourList[[as.character(hours[k])]]=flagList
+        detList[[as.character(dets[j])]]=hourList
     }
-    detList[[as.character(dets[j])]]=hourList
-  }
-  monthListUp[[month]]=detList
-  print(paste0("Finished status flags for month ",i," of ",length(monthRange)))
+    monthListUp[[month]]=detList
+    print(paste0("Finished status flags for month ",i," of ",length(monthRange)))
 }
 
 # Issue 20: I-84 WB west of Grand – Very High Lane Volumes ----------------
@@ -369,9 +378,9 @@ theme_set(theme_bw(base_size = 25))
 agg$hour = hour(agg$period)
 agg$time = strptime(as.character(agg$hour),format = "%H")
 plt = ggplot(agg,aes(x=time,y=volume,group=lanenumber,colour=lanenumber))+geom_point(alpha=0.3)+
-  geom_smooth()+xlab("Hour of Day")+ylab("Volume (vph)")+scale_y_continuous(limits=c(0,3000))+
-  ggtitle("Weekday volumes plotted by hour of day and lane for \n I-84 WB W of Grand (April-July 2015)")+scale_colour_discrete(name="Lane Number")+
-  scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_smooth()+xlab("Hour of Day")+ylab("Volume (vph)")+scale_y_continuous(limits=c(0,3000))+
+    ggtitle("Weekday volumes plotted by hour of day and lane for \n I-84 WB W of Grand (April-July 2015)")+scale_colour_discrete(name="Lane Number")+
+    scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
 png("_results/img/specificIssues/20/volumes.png",width=1200,height=600)
 print(plt)
 dev.off()
@@ -390,8 +399,8 @@ joined = join(raw,detectors,by ="detectorid")
 agg = aggTime(unAgg=joined,aggVars=c("stationid","lanenumber"),timeCut = "hour", acrossDays = FALSE)
 agg$lanenumber=factor(agg$lanenumber)
 ggplot(agg,aes(x=period,y=volume,group =lanenumber, colour = lanenumber))+
-  geom_line()+scale_colour_discrete(name="Lane Number")+
-  ggtitle("I-205 NB @ Halsey (Mean over 09-01-15 to 10-02-15)")+
-  ylab("Mean Speed (mph)")+xlab("")+
-  scale_x_datetime()
-  #scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
+    geom_line()+scale_colour_discrete(name="Lane Number")+
+    ggtitle("I-205 NB @ Halsey (Mean over 09-01-15 to 10-02-15)")+
+    ylab("Mean Speed (mph)")+xlab("")+
+    scale_x_datetime()
+#scale_x_datetime(labels=date_format("%I:%M %p", tz=Sys.timezone()))
