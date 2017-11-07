@@ -14,61 +14,76 @@ library(mail)
 library(dplyr)
 library(rgdal)
 library(rjson)
+library(leaflet)
+library(htmlwidgets)
 
 #Set working directory
-setwd("/Users/bblanc/OneDrive/_ODOT/_Portal/investigations")
+setwd("/Users/cdm/Dropbox/Data_Science/portal/investigations/")
+
 
 #Connect to Portal db, Make sure you VPN into PSU CECS network
 db_cred = fromJSON(file="db_credentials.json")
-con <- dbConnect(dbDriver("PostgreSQL"), host=db_cred$db_credentials$db_host, port= 5432, user=db_cred$db_credentials$db_user, password = db_cred$db_credentials$db_pass, dbname=db_cred$db_credentials$db_name)
+con <- dbConnect(dbDriver("PostgreSQL"), 
+                 host=db_cred$db_credentials$db_host, 
+                 port= 5432, 
+                 user=db_cred$db_credentials$db_user, 
+                 password = db_cred$db_credentials$db_pass, 
+                 dbname=db_cred$db_credentials$db_name)
 
 ####Relational Tables
-stations= dbGetQuery(con,"SELECT * FROM public.stations")
-detectors = dbGetQuery(con,"SELECT * FROM public.detectors")
+# stations= dbGetQuery(con,"SELECT * FROM public.stations")
+# detectors = dbGetQuery(con,"SELECT * FROM public.detectors")
+# I-5 and I-205 stations only
+stations= dbGetQuery(con,"SELECT * FROM public.stations WHERE highwayid IN (1, 2, 3, 4)")
+detectors = dbGetQuery(con,"SELECT * FROM public.detectors WHERE highwayid IN (1, 2, 3, 4)")
 
-oregonStationGeom = readOGR("/Users/bblanc/OneDrive/_ODOT/_Portal/investigations/_data/GIS/","oregonStations")
+
+# Read spatial data
+oregonStationGeom = readOGR(dsn = path.expand("./_data/GIS"), layer = "oregonStations")
 orStationData = oregonStationGeom@data
 currentStations = subset(orStationData,is.na(orStationData$end_date))
 stationVec = sort(unique(currentStations$stationid))
 
-#Load stock functions
-source("_functions/querying.R")
-source("_functions/aggregation.R")
+#Load stock functions - unknown location; not on github; not in portalr package
+# source("_functions/querying.R")
+# source("_functions/aggregation.R")
+source("./z_archive/_functions/querying.R")
+source("./z_archive/_functions/aggregation.R")
 
 # Functions ---------------------------------------------------------------
 laneNumsSuspect= function(station_id,startTime,endTime,percentile){
-  dets = detectors$detectorid[detectors$stationid %in% station_id]
-  if(length(dets>0)){
-    query = freewayQuery(dets,startTime,endTime)
-    rawRequest = dbGetQuery(con,query)
-    if (nrow(rawRequest)>0){
-      raw = join(rawRequest,detectors,by="detectorid")
-      raw$period = cut(raw$starttime,breaks = "hour")
-      raw = subset(raw,raw$volume !=0)
-      if(nrow(raw)>0){
-        agg = ddply(raw,c("lanenumber","period"),function(X) data.frame(volume=sum(X$volume), occupancy = mean(X$occupancy), speed = weighted.mean(X$speed,X$volume)))
-        agg$period = as.POSIXct(agg$period)
-        agg$lanenumber = factor(agg$lanenumber)
-        lanes = as.character(unique(agg$lanenumber))
-        if(length(lanes)>1){
-          numLanes = length(lanes)
-          agg$hour = hour(agg$period)
-          agg_hour = ddply(agg,c("lanenumber","hour"),function(X) data.frame(volume=mean(X$volume), occupancy = mean(X$occupancy), speed = mean(X$speed)))
-          diff = agg_hour$speed[as.character(agg_hour$lanenumber) ==lanes[1]] - 
-            agg_hour$speed[as.character(agg_hour$lanenumber) ==lanes[length(lanes)]]
-          return(as.numeric(quantile(diff,percentile,na.rm=TRUE)))
+    dets = detectors$detectorid[detectors$stationid %in% station_id]
+    if(length(dets>0)){
+        query = freewayQuery(dets,startTime,endTime)
+        rawRequest = dbGetQuery(con,query)
+        if (nrow(rawRequest)>0){
+            raw = join(rawRequest,detectors,by="detectorid")
+            raw$period = cut(raw$starttime,breaks = "hour")
+            raw = subset(raw,raw$volume !=0)
+            if(nrow(raw)>0){
+                agg = ddply(raw,c("lanenumber","period"),function(X) data.frame(volume=sum(X$volume), occupancy = mean(X$occupancy), speed = weighted.mean(X$speed,X$volume)))
+                agg$period = as.POSIXct(agg$period)
+                agg$lanenumber = factor(agg$lanenumber)
+                lanes = as.character(unique(agg$lanenumber))
+                if(length(lanes)>1){
+                    numLanes = length(lanes)
+                    agg$hour = hour(agg$period)
+                    agg_hour = ddply(agg,c("lanenumber","hour"),function(X) data.frame(volume=mean(X$volume), occupancy = mean(X$occupancy), speed = mean(X$speed)))
+                    diff = agg_hour$speed[as.character(agg_hour$lanenumber) ==lanes[1]] - 
+                        agg_hour$speed[as.character(agg_hour$lanenumber) ==lanes[length(lanes)]]
+                    return(as.numeric(quantile(diff,percentile,na.rm=TRUE)))
+                }else{
+                    return(NA)
+                }
+            }else{
+                return(NA)
+            }
         }else{
-          return(NA)
+            return(NA)
         }
-      }else{
-        return(NA)
-      }
     }else{
-      return(NA)
+        return(NA)
     }
-  }else{
-    return(NA)
-  }
 }
 
 
@@ -79,19 +94,19 @@ stationCheck$stationid = stationVec
 stationCheck$multiLane=FALSE
 
 for(i in 1:nrow(stationCheck)){
-  sid = stationCheck$stationid[i]
-  dets = detectors[detectors$stationid %in% sid,]
-  if(length(unique(dets$lanenumber))>1){
-    stationCheck$multiLane[i] = TRUE
-  }
+    sid = stationCheck$stationid[i]
+    dets = detectors[detectors$stationid %in% sid,]
+    if(length(unique(dets$lanenumber))>1){
+        stationCheck$multiLane[i] = TRUE
+    }
 }
 
 stationCheck = subset(stationCheck,stationCheck$multiLane==TRUE)
 
 for (i in 1:nrow(stationCheck)){
-  station_id = stationCheck$stationid[i]
-  stationCheck$pDiff_10[i] = laneNumsSuspect(station_id,startTime = "2015-06-01",endTime ="2015-06-30", percentile = 0.05)
-  print(paste0("Checked station # ",i," of ",nrow(stationCheck)))
+    station_id = stationCheck$stationid[i]
+    stationCheck$pDiff_10[i] = laneNumsSuspect(station_id,startTime = "2016-01-01",endTime ="2016-01-02", percentile = 0.05)
+    print(paste0("Checked station # ",i," of ",nrow(stationCheck)))
 }
 
 stationCheck$flag=FALSE
@@ -100,11 +115,12 @@ stationCheckFinal=stationCheck[!duplicated(stationCheck$stationid),]
 
 saveRDS(stationCheckFinal,"laneNumberCheck.rds")
 
-if(i == nrow(stationCheck)){
-  sendmail("bblanc@pdx.edu",subject="Finished speed calculation for lanes",message="You're awesome!", password="rmail")
-}
+# if(i == nrow(stationCheck)){
+#   sendmail("bblanc@pdx.edu",subject="Finished speed calculation for lanes",message="You're awesome!", password="rmail")
+# }
+print("Finished checking stations")
 
-###plotting
+### plotting ---------------------------------------------------------
 
 laneCheck = readRDS("laneNumberCheck.rds")
 laneCheck$flag=FALSE
@@ -118,8 +134,7 @@ laneFrame$out[(laneFrame$pDiff_10 <fences[2] & laneFrame$pDiff_10 >= fences[1])|
 laneFrame$out[(laneFrame$pDiff_10 <fences[1])|(laneFrame$pDiff_10 >fences[4])]="Major"
 laneFrame$out=factor(laneFrame$out,ordered = TRUE)
 
-stationsShp = readOGR(dsn="/Users/bblanc/OneDrive/_ODOT/_Portal/_gisData",layer ="stations")
-#stationsShp = readOGR(dsn="~/_ODOT_Portal/investigations",layer ="stations")
+stationsShp = readOGR(dsn = path.expand("./_data/GIS"), layer = "stations")
 stationsLoc=stationsShp@data
 flagged = subset(laneFrame,laneFrame$out == "Minor" | laneFrame$out =="Major" )
 
@@ -174,78 +189,111 @@ theme_set(theme_grey(base_size=50))
 #manual_flags = c(1011,1073,1012,1014)
 #flagged = subset(flagged,flagged$stationid %in% manual_flags)
 
+startTime = "2016-01-01"
+endTime ="2016-01-02"
+
+# Make plots!
 for (i in 1:length(flagged$stationid)){
-       sid = flagged$stationid[i]
-       stationName =stations$locationtext[stations$stationid==sid]
-       dets = detectors$detectorid[detectors$stationid %in% sid]
-       if(length(dets>0)){
-           query = paste0("SELECT * FROM freeway.data WHERE (starttime >='",startTime,"T00:00:00' AND starttime <='",endTime,"T23:59:59') AND (detectorid = ",dets[1])
-           if(length(dets)>1){
-               for (i in 2:length(dets)){
-                   query = paste0(query," OR detectorid = ",dets[i])
-                 }
-             }
-           query = paste0(query,")")
-           rawRequest = dbGetQuery(con,query)
-           if (nrow(rawRequest)>0){
-               raw = join(rawRequest,detectors,by="detectorid")
-               raw$dow = weekdays(raw$starttime)
-               raw = subset(raw,(raw$dow != "Saturday" & raw$dow != "Sunday"))
-               raw$period = cut(raw$starttime,breaks = "1 hour")
-               raw = subset(raw,raw$volume !=0)
-               if(as.numeric(quantile(raw$volume,0.05,na.rm=TRUE))>0){
-                   agg = ddply(raw,c("lanenumber","period"),function(X) data.frame(volume=sum(X$volume), occupancy = mean(X$occupancy), speed = weighted.mean(X$speed,X$volume)))
-                 }else{
-                  agg = ddply(raw,c("lanenumber","period"),function(X) data.frame(volume=sum(X$volume), occupancy = mean(X$occupancy), speed = mean(X$speed)))
-               }
-               agg$period = as.POSIXct(agg$period)
-               agg$lanenumber = factor(agg$lanenumber)
-               lanes = as.character(unique(agg$lanenumber))
-               numLanes = length(lanes)
-               agg$hour = hour(agg$period)
-               if(as.numeric(quantile(agg$volume,0.05,na.rm=TRUE))>0){
-                   agg_hour = ddply(agg,c("lanenumber","hour"),function(X) data.frame(volume=mean(X$volume), occupancy = mean(X$occupancy), speed = weighted.mean(X$speed,X$volume)))
-               }else{
-                     agg_hour = ddply(agg,c("lanenumber","hour"),function(X) data.frame(volume=mean(X$volume), occupancy = mean(X$occupancy), speed = mean(X$speed)))
-               }
-               timeTicks = c(3,6,9,12,15,18,21)
-               timeLabs = c("3 AM","6 AM","9 AM","12 PM","3 PM","6 PM","9 PM")
-               
-               png(paste0("plots/",sid,".png"),height = 1000, width = 1600)
-               print(ggplot(agg_hour, aes(x=hour,y=speed,group = lanenumber))+geom_line(aes(colour = lanenumber),size =2)+scale_color_discrete(name="Lane Number")+xlab("")+ylab("Speed (mph)")+scale_x_continuous(breaks=timeTicks,labels = timeLabs)+ggtitle(paste0("Weekday Weighted Mean Speed During June 2015 \n @ Station #",sid," (", stationName,")")))
-               dev.off() 
-             }
-       }
-       print(paste0("plotted for station #",i," of ",nrow(flagged)))
+    sid = flagged$stationid[i]
+    stationName =stations$locationtext[stations$stationid==sid]
+    dets = detectors$detectorid[detectors$stationid %in% sid]
+    if(length(dets>0)){
+        query = paste0("SELECT * FROM freeway.data WHERE (starttime >='",startTime,"T00:00:00' AND starttime <='",endTime,"T23:59:59') AND (detectorid = ",dets[1])
+        if(length(dets)>1){
+            for (i in 2:length(dets)){
+                query = paste0(query," OR detectorid = ",dets[i])
+            }
+        }
+        query = paste0(query,")")
+        rawRequest = dbGetQuery(con,query)
+        if (nrow(rawRequest)>0){
+            raw = join(rawRequest,detectors,by="detectorid")
+            raw$dow = weekdays(raw$starttime)
+            raw = subset(raw,(raw$dow != "Saturday" & raw$dow != "Sunday"))
+            raw$period = cut(raw$starttime,breaks = "1 hour")
+            raw = subset(raw,raw$volume !=0)
+            if(as.numeric(quantile(raw$volume,0.05,na.rm=TRUE))>0){
+                agg = ddply(raw,c("lanenumber","period"),function(X) data.frame(volume=sum(X$volume), occupancy = mean(X$occupancy), speed = weighted.mean(X$speed,X$volume)))
+            }else{
+                agg = ddply(raw,c("lanenumber","period"),function(X) data.frame(volume=sum(X$volume), occupancy = mean(X$occupancy), speed = mean(X$speed)))
+            }
+            agg$period = as.POSIXct(agg$period)
+            agg$lanenumber = factor(agg$lanenumber)
+            lanes = as.character(unique(agg$lanenumber))
+            numLanes = length(lanes)
+            agg$hour = hour(agg$period)
+            if(as.numeric(quantile(agg$volume,0.05,na.rm=TRUE))>0){
+                agg_hour = ddply(agg,c("lanenumber","hour"),function(X) data.frame(volume=mean(X$volume), occupancy = mean(X$occupancy), speed = weighted.mean(X$speed,X$volume)))
+            }else{
+                agg_hour = ddply(agg,c("lanenumber","hour"),function(X) data.frame(volume=mean(X$volume), occupancy = mean(X$occupancy), speed = mean(X$speed)))
+            }
+            timeTicks = c(3,6,9,12,15,18,21)
+            timeLabs = c("3 AM","6 AM","9 AM","12 PM","3 PM","6 PM","9 PM")
+            
+            png(paste0("./_results/laneNumbers/plots/",sid,".png"),height = 1000, width = 1600)
+            print(ggplot(agg_hour, 
+                         aes(x=hour,y=speed,group = lanenumber))+geom_line(aes(colour = lanenumber),
+                                                                           size =2)+scale_color_discrete(name="Lane Number")+xlab("")+ylab("Speed (mph)")+scale_x_continuous(breaks=timeTicks,labels = timeLabs)+ggtitle(paste0("Weekday Weighted Mean Speed 1/1/17 \n @ Station #",
+                                                                                                                                                                                                                                sid," (", stationName,")")))
+            dev.off() 
+        }
+    }
+    print(paste0("plotted for station #",i," of ",nrow(flagged)))
 }
 
 stationsLoc = stationsLoc[!duplicated(stationsLoc$stationid),]
 
-map= leaflet() %>% addProviderTiles("Stamen.TonerLite", options = providerTileOptions(noWrap = TRUE)) %>% setView(-122.6662589, 45.5317385, zoom = 10)
+#################### Important #################################################
+# You need to host the output images on a web server ###########################
+################################################################################
+
+
+map= leaflet() %>% 
+    addProviderTiles("Stamen.TonerLite", 
+                     options = providerTileOptions(noWrap = TRUE)) %>% 
+    setView(-122.6662589, 45.5317385, zoom = 10)
+
+
+# Add lat & lon to flagged data frame
+temp_stationsLoc = stationsLoc %>%
+    select(stationid, lat, lng)
+flagged = merge(flagged, temp_stationsLoc, by = "stationid")
+rm(temp_stationsLoc)
+
+# this loop doesn't work properly
 for(i in 1:nrow(flagged)){
-         sid = flagged$stationid[i]
-         plot_url = paste0("http://bigtransportdata.com/_portal/laneNumbers/plots/",sid,".png")
-         flagged$html[i] = paste0("<div align='center'><a href='",plot_url,"' target='_blank'><img src='",plot_url,"' alt='VolumePlot' height='200' width='300'></a></div>")
-         if(sid >= 5000){
-           if(length(stationsLoc$lat[stationsLoc$stationid==sid-4000]==1)){
-             flagged$lat[i]=stationsLoc$lat[stationsLoc$stationid==sid-4000]
-           }
-           if(length(stationsLoc$lng[stationsLoc$stationid==sid-4000])==1){
-             flagged$lng[i]=stationsLoc$lng[stationsLoc$stationid==sid-4000]
-           }
-         }else{
-           if(length(stationsLoc$lat[stationsLoc$stationid==sid]==1)){
-             flagged$lat[i]=stationsLoc$lat[stationsLoc$stationid==sid]
-           }
-           if(length(stationsLoc$lng[stationsLoc$stationid==sid])==1){
-             flagged$lng[i]=stationsLoc$lng[stationsLoc$stationid==sid]
-           }
-         }
-       }
+    sid = flagged$stationid[i]
+    # plot_url = paste0("http://bigtransportdata.com/_portal/laneNumbers/plots/",sid,".png") # this refers to files hosted on bryan's website
+    plot_url = paste0("http://dks.cloud/cdm/portal/_results/laneNumbers/plots/",sid,".png") # this refers to files hosted on bryan's website
+    flagged$html[i] = paste0("<div align='center'><a href='",plot_url,"' target='_blank'><img src='",plot_url,"' alt='VolumePlot' height='200' width='300'></a></div>")
+    # Assign lat & long values to the flagged stations by id ?
+    # if(sid >= 5000){
+    #     if(length(stationsLoc$lat[stationsLoc$stationid==sid-4000])==1){
+    #         flagged$lat[i]=stationsLoc$lat[stationsLoc$stationid==sid-4000]
+    #     }
+    #     if(length(stationsLoc$lng[stationsLoc$stationid==sid-4000])==1){
+    #         flagged$lng[i]=stationsLoc$lng[stationsLoc$stationid==sid-4000]
+    #     }
+    # }else{
+    #     if(length(stationsLoc$lat[stationsLoc$stationid==sid])==1){
+    #         flagged$lat[i] = stationsLoc$lat[stationsLoc$stationid==sid]
+    #     }
+    #     if(length(stationsLoc$lng[stationsLoc$stationid==sid])==1){
+    #         flagged$lng[i]=stationsLoc$lng[stationsLoc$stationid==sid]
+    #     }
+    #}
+}
 redFlag = makeIcon(iconUrl = "http://bigtransportdata.com/_portal/laneNumbers/redFlag.png",iconWidth = 37,iconHeight = 41,iconAnchorX = 2,iconAnchorY = 40)
 yellowFlag = makeIcon(iconUrl = "http://bigtransportdata.com/_portal/laneNumbers/yellowFlag.png",iconWidth = 37,iconHeight = 41,iconAnchorX = 2,iconAnchorY = 40)  
 
-map =addMarkers(map=map,icon=redFlag,lng =flagged$lng[flagged$out=="Major"],lat=flagged$lat[flagged$out=="Major"],popup = flagged$html[flagged$out=="Major"])
-map =addMarkers(map=map,icon=yellowFlag,lng =flagged$lng[flagged$out=="Minor"],lat=flagged$lat[flagged$out=="Minor"],popup = flagged$html[flagged$out=="Minor"])
+map = addMarkers(map=map,icon=redFlag,lng =flagged$lng[flagged$out=="Major"],lat=flagged$lat[flagged$out=="Major"],popup = flagged$html[flagged$out=="Major"])
+map = addMarkers(map=map,icon=yellowFlag,lng =flagged$lng[flagged$out=="Minor"],lat=flagged$lat[flagged$out=="Minor"],popup = flagged$html[flagged$out=="Minor"])
 
-saveWidget(map, "laneNumFlagsMap.html")
+saveWidget(map, file = paste(getwd(), 
+                             "/_results/laneNumbers/",
+                             Sys.Date(), "_",
+                             "laneNumFlagsMap.html", 
+                             sep = ""))
+
+# Disconnect from server
+dbDisconnect(con)
