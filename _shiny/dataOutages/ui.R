@@ -11,7 +11,7 @@ fluidPage(
     tabPanel("Outage Explorer",
              #Map
              fixedRow(
-               leafletOutput("leaf", width = "100%",height = 300)
+               leafletOutput("leaf", width = "100%",height = 400)
              ),
              #User help text
              p("Click a point on the map to plot data outages"),

@@ -16,8 +16,9 @@ require(rgeos)
 require(rgdal)
 require(rjson)
 require(reshape2)
+library(twilio)
 
-#Set working directory
+# Set working directory
 setwd("/Users/cdm/Dropbox/Data_Science/portal/investigations/")
 
 # Now VPN into PSU CECS network...
@@ -34,8 +35,11 @@ con <- dbConnect(dbDriver("PostgreSQL"),
 # sort(result)
 
 #Relational Tables
-stations = dbGetQuery(con,"SELECT * FROM public.stations")
-detectors = dbGetQuery(con,"SELECT * FROM public.detectors")
+# stations = dbGetQuery(con,"SELECT * FROM public.stations")
+# detectors = dbGetQuery(con,"SELECT * FROM public.detectors")
+# Just for I-5 and I-205
+stations = dbGetQuery(con,"SELECT * FROM public.stations WHERE highwayid IN (1, 2, 3, 4)")
+detectors = dbGetQuery(con,"SELECT * FROM public.detectors WHERE highwayid IN (1, 2, 3, 4)")
 
 
 
@@ -46,8 +50,11 @@ source("./z_archive/_functions/querying.R")
 source("./z_archive/_functions/aggregation.R")
 
 # functions ---------------------------------------------------------------
-missingData = function(station_id,detectors,startTime,endTime,percentile){
-    dets = detectors$detectorid[detectors$stationid %in% station_id]
+
+# Missing data function.
+missingData = function(station_id, detectors, startTime, endTime, 
+                       percentile = 0.05){ # Default percentile
+    dets = detectors$detectorid[detectors$stationid %in% station_id] # Detectors in the station IDs input
     lanes = sort(unique(detectors$lanenumber[detectors$detectorid %in% dets]))
     lanes = lanes[lanes!=0]
     laneList = list()
@@ -102,7 +109,7 @@ missingData = function(station_id,detectors,startTime,endTime,percentile){
 
 
 # Exploration -------------------------------------------------------------
-# Check whether spatial data exists where it should
+# First, check whether spatial data exists where it should
 # list.files("./_data/GIS", pattern='\\.shp$')
 # file.exists("./_data/GIS/oregonStations.shp")
 
@@ -112,18 +119,28 @@ orStationData = oregonStationGeom@data
 currentStations = subset(orStationData,is.na(orStationData$end_date))
 stationVec = sort(unique(currentStations$stationid))
 
-timeRange = timeSequence("2016-01-01","2017-05-31",by="day")
+# Specify date range of interest
+start_day = "2016-01-01"
+end_day   = "2017-05-31"
 
-# stationList = list()
-stationList = readRDS("./_data/freeway/dataOutages/stationList.rds") # This is something needed from ODOT R1
+timeRange = timeSequence(start_day, end_day, by = "day")
+
+# Set up empty list to populate. List will be read later in mapping and shiny app
+stationList = list()
+# stationList = readRDS("./_data/freeway/dataOutages/stationList.rds") # Not needed
 loopStart = Sys.time()
 
+# Process missing data using functions defined above and in other "functions" scripts
 for (i in (length(stationList)+1):length(stationVec)){
     sid = stationVec[i]
     timeList = list()
     for (j in 1:length(timeRange)){
         time = as.character(timeRange[j])
-        result = missingData(station_id = sid, detectors = detectors, startTime = time,endTime = time,percentile = 0.05)
+        result = missingData(station_id = sid, 
+                             detectors = detectors, 
+                             startTime = time,
+                             endTime = time,
+                             percentile = 0.05)
         timeList[[time]]=result
         print(paste0("Results for time ", j, " of ", length(timeRange), " for detector ", i, " of ",length(stationVec)))
     }
@@ -133,7 +150,20 @@ for (i in (length(stationList)+1):length(stationVec)){
     saveRDS(stationList,"_data/freeway/dataOutages/stationList.rds")
 }
 
+# Send sms that loop is complete.
 
+# Set up Twilio. Make an account and get a Twilio phone number.
+# Twilio number: 2672448332
+# Twilio SID: "_____________________"
+# Twilio Auth Token: "_______________"
+# Sys.setenv(TWILIO_SID = "<sid>") # Use real sid
+# Sys.setenv(TWILIO_TOKEN = "<token>") # Use real token"
+
+my_number = "6109607490"
+twilio_number = "2672448332"
+
+tw_send_message(from = twilio_number, to = my_number, 
+                body = "Missing data processing complete.")
 
 
 # Mapping -----------------------------------------------------------------
@@ -194,8 +224,12 @@ pal <- colorNumeric(
     domain = c(0,100)
 )
 
-map= leaflet(mapFrame) %>% addProviderTiles("CartoDB.DarkMatter",options = providerTileOptions(noWrap = TRUE)) %>%
-    setView(-122.6662589, 45.5317385, zoom = 10) %>% addCircleMarkers(lng=~long,lat=~lat,popup =~htmlLink,color =~pal(numOutages))
+map = leaflet(mapFrame) %>% 
+    addProviderTiles("CartoDB.Positron",
+                     options = providerTileOptions(noWrap = TRUE)) %>%
+    setView(-122.6662589, 45.5317385, zoom = 10) %>% 
+    addCircleMarkers(lng=~long,lat=~lat,popup =~htmlLink,
+                     color =~pal(numOutages))
 
 
 
@@ -284,3 +318,5 @@ saveRDS(tabFrame,"_data/freeway/dataOutages/tabFrame.rds")
 
 # Disconnect from server
 dbDisconnect(con)
+# May need to use this if you get error "Error in ... connection has pending rows"
+# dbClearResult(dbListResults(con)[[1]])

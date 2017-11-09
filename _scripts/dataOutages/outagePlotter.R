@@ -9,16 +9,18 @@ library(stargazer)
 library(rgeos)
 library(rgdal)
 
-sysName = Sys.info()["sysname"]
-if (sysName == "Linux"){
-  setwd(setwd("~/_ODOT_Portal/investigations"))
-}else{
-  setwd("/Users/bblanc/OneDrive/_ODOT/_Portal/investigations/")
-}
+# sysName = Sys.info()["sysname"]
+# if (sysName == "Linux"){
+#   setwd(setwd("~/_ODOT_Portal/investigations"))
+# }else{
+#   setwd("/Users/bblanc/OneDrive/_ODOT/_Portal/investigations/")
+# }
+setwd("/Users/cdm/Dropbox/Data_Science/portal/investigations/")
+
 
 #valueFlagReports = readRDS("valueFlagReports.rds")
 #stationFlagReports = readRDS("stationFlagReports.rds")
-outageFrame = readRDS("newOutageFlags.rds")
+outageFrame = readRDS("newOutageFlags.rds") # Can't find this file. Not located where it should be
 
 lowVals = outageFrame$stationid[outageFrame$flag==1]
 missingVals = outageFrame$stationid[outageFrame$flag==2]
@@ -37,9 +39,11 @@ con <- dbConnect(dbDriver("PostgreSQL"), host=db_cred$db_credentials$db_host, po
 
 
 ####Relational Tables
-stations= dbGetQuery(con,"SELECT * FROM public.stations")
-detectors = dbGetQuery(con,"SELECT * FROM public.detectors")
-
+# stations= dbGetQuery(con,"SELECT * FROM public.stations")
+# detectors = dbGetQuery(con,"SELECT * FROM public.detectors")
+# Just for I-5 and I-205
+stations= dbGetQuery(con,"SELECT * FROM public.stations WHERE highwayid IN (1, 2, 3, 4)")
+detectors = dbGetQuery(con,"SELECT * FROM public.detectors WHERE highwayid IN (1, 2, 3, 4)")
 
 # 
 # plotOutages = function(reportList){
